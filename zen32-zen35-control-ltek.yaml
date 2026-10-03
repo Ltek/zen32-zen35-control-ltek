@@ -1,0 +1,3094 @@
+blueprint:
+  name: 🎛️ ZEN32 / ZEN35 Scene & LED Control by LTek
+  description: |
+    **Run scenes from every button while each LED mirrors any entity's state — color, behavior, and brightness — over Z-Wave JS**
+
+    🚀 Version 2026.10.03.2
+
+    ---
+    ## 🎬 Button Actions
+    - Pressed once, held, released, and 2x–5x multi-tap — each with its own action
+    - Big button (relay / dimmer) plus the four scene buttons
+    - 3-way switch scene (momentary; 800-series, or 700-series firmware 10.40+)
+
+    ## 💡 Per-Button LED Tracking
+    - Point a button at any entity (light, cover, lock, climate, sensor, …)
+    - Its LED color, behavior, and brightness follow that entity's on / off / unavailable state
+    - Big button's LED is blueprint-driven by default, or hand it to the device firmware
+
+    ## 🌍 Global Defaults
+    - Set color, behavior, and brightness for on / off / unavailable once, for all buttons
+    - Any button can override a value; otherwise it inherits the default
+
+    ## 🌗 Conditional Override
+    - Supply your own **triggers** (when to re-check) and **condition** (when it's active)
+    - Any time, entity, sun, numeric, or template logic Home Assistant supports
+    - Override behavior / color / brightness **per button** — e.g. dim every LED after sunset while each keeps its color
+    - Replaces the old fixed Night Time feature
+
+    ## 🔆 Brightness Scale
+    - Chosen on the device's own 1–10 scale (3 = Low, 6 = Medium, 10 = Bright)
+    - New-scale firmware (ZEN35 1.40+, ZEN32 800LR 3.30+) is auto-detected
+    - Older firmware is remapped automatically (1–3 Low, 4–7 Medium, 8–10 Bright); detection can be overridden
+
+    ## ⚙️ Relay / Dimmer Options
+    - Smart-bulb mode and load/LED reporting (parameters 19 & 20)
+    - Optionally force untracked buttons' LEDs to Always Off
+
+    ---
+    > Requires Home Assistant **2024.10.0+**. Configure any other Z-Wave parameters on the device page.
+    > Based on the blueprint by rwalker777.
+  domain: automation
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    zooz_switch:
+      name: Zooz Scene Controller
+      description: List of available Zooz ZEN32 or ZEN35 switches.
+      selector:
+        device:
+          filter:
+          - integration: zwave_js
+            manufacturer: Zooz
+            model: ZEN32
+          - integration: zwave_js
+            manufacturer: Zooz
+            model: ZEN32 800LR
+          - integration: zwave_js
+            manufacturer: Zooz
+            model: ZEN35
+          multiple: false
+    firmware_version:
+      name: Firmware Version
+      description: 'Select your device''s firmware version to use correct LED
+        brightness scale. **ZEN32 800LR 3.30+ and ZEN35 1.40+** use 1-10 brightness
+        scale (Recommended). **Older ZEN32** models use 0-2 brightness scale.
+        This setting is auto-detected from your device model and firmware version but can be manually overridden.
+
+        '
+      default: auto
+      selector:
+        select:
+          mode: dropdown
+          options:
+          - label: Auto-detect from device model and firmware (Recommended)
+            value: auto
+          - label: ZEN32 800LR 3.30+ / ZEN35 1.40+ (1-10 scale)
+            value: new
+          - label: ZEN32 older versions (0-2 scale)
+            value: legacy
+          multiple: false
+          custom_value: false
+          sort: false
+    p19_relay_control:
+      name: Enable / Disable Relay / Dimmer Control (Parameter 19)
+      description: Disable for smart bulb mode, or if there is no load attached
+        to the relay (ZEN32) / dimmer (ZEN35), or you want the big button to be
+        scene only.
+      default: '1'
+      selector:
+        select:
+          mode: dropdown
+          options:
+          - label: Local control disabled (Smart bulb mode)
+            value: '0'
+          - label: Local and Z-Wave control enabled
+            value: '1'
+          - label: Local and Z-Wave control disabled
+            value: '2'
+          multiple: false
+          custom_value: false
+          sort: false
+    p20_relay_led_report:
+      name: Enable / Disable Reporting and LED toggle if Relay / Dimmer is Disabled (Parameter 20)
+      description: It *should* be disabled
+      default: '1'
+      selector:
+        select:
+          mode: dropdown
+          options:
+          - label: Enable
+            value: '0'
+          - label: Disable
+            value: '1'
+          multiple: false
+          custom_value: false
+          sort: false
+    turn_off_untracked:
+      name: Turn Off Untracked LEDs
+      description: If enabled, any scene buttons that do not have a tracked entity
+        will have their LEDs permanently turned off (Always Off).
+      default: false
+      selector:
+        boolean: {}
+    global_defaults:
+      icon: mdi:earth
+      name: Global Defaults
+      description: 'Defaults auto-apply to all related buttons. Individual button overrides are set inside the separate button panel sections.'
+      collapsed: true
+      input:
+        global_on_state:
+          name: On Behavior
+          description: Led state when a tracked target is on, opened, armed or unlocked.
+          default: '3'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_on_color:
+          name: On Color
+          description: Color for LED when a tracked target is on.
+          default: '2'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_on_brightness:
+          name: On Brightness
+          description: LED brightness when a tracked target is on. 3 = Low, 6 = Medium, 10 = Bright. Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: '6'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_off_state:
+          name: Off Behavior
+          description: Led state when a tracked target is off, closed, disarmed or locked.
+          default: '3'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_off_color:
+          name: Off Color
+          description: Color for LED when a tracked target is off.
+          default: '0'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_off_brightness:
+          name: Off Brightness
+          description: LED brightness when a tracked target is off. 3 = Low, 6 = Medium, 10 = Bright. Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: '3'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_unavail_state:
+          name: Unavailable Behavior
+          description: Led state when a tracked target is unavailable.
+          default: '2'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_unavail_color:
+          name: Unavailable Color
+          description: Color for LED when a tracked target is unavailable.
+          default: '3'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_unavail_brightness:
+          name: Unavailable Brightness
+          description: LED brightness when a tracked target is unavailable. 3 = Low, 6 = Medium, 10 = Bright. Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: '6'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    cond_override:
+      icon: mdi:tune-variant
+      name: Conditional Override
+      description: 'Replaces the old Night Time feature. Supply the triggers that
+        should re-check the override and the condition that makes it active. While
+        active, the values below replace the normal LED values. Set the matching
+        value inside a button''s LED Settings panel to override just that button.'
+      collapsed: true
+      input:
+        override_triggers:
+          name: Override Triggers
+          description: 'Triggers that cause the LEDs to be re-evaluated - for example
+            a time trigger at 22:00 and another at 07:00, or a state trigger on an
+            input_boolean. These only decide *when* to re-check; the condition below
+            decides whether the override is active. LEDs are also re-evaluated on
+            Home Assistant start and whenever a tracked entity changes.'
+          default: []
+          selector:
+            trigger: {}
+        override_condition:
+          name: Override Condition
+          description: 'The override is active whenever this condition is true - for
+            example a time condition for after 22:00, or a state condition on
+            input_boolean.night_mode. Leave empty to treat the override as always
+            active. This is checked on every LED update, so the LEDs are correct
+            after a restart even if no trigger fired.'
+          default: []
+          selector:
+            condition: {}
+        global_ovr_state:
+          name: Override Behavior
+          description: Default LED behavior while the override is active. No Change
+            keeps the normal per-state behavior.
+          default: '99'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_ovr_color:
+          name: Override Color
+          description: Default LED color while the override is active. No Change keeps
+            the normal per-state color.
+          default: '99'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        global_ovr_brightness:
+          name: Override Brightness
+          description: Default LED brightness while the override is active. 3 = Low,
+            6 = Medium, 10 = Bright. Older firmware is remapped automatically. No
+            Change keeps the normal per-state brightness. Not used when the resulting
+            behavior is Always Off.
+          default: '99'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    3way_switch:
+      icon: mdi:light-switch
+      name: 3 Way Switch - Actions
+      description: Requires the 3 way to be set to momentary, and an 800 series device
+        or firmware 10.40+ on 700 series.
+      collapsed: true
+      input:
+        scene_6:
+          name: Pressed Once
+          description: Action to run when 3 way switch is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_6h:
+          name: Held
+          description: Action to run when 3 way switch button is held.
+          default: []
+          selector:
+            action: {}
+        scene_6r:
+          name: Released
+          description: Action to run when 3 way switch is released.
+          default: []
+          selector:
+            action: {}
+        scene_62:
+          name: Pressed 2x
+          description: Action to run when 3 way switch is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_63:
+          name: Pressed 3x
+          description: Action to run when 3 way switch is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_64:
+          name: Pressed 4x
+          description: Action to run when 3 way switch is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_65:
+          name: Pressed 5x
+          description: Action to run when 3 way switch is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button0_actions:
+      icon: mdi:numeric-1-box
+      name: 'Big Button (Relay / Dimmer) - Actions'
+      collapsed: true
+      input:
+        scene_5:
+          name: Pressed Once
+          description: Action to run when button is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_5h:
+          name: Held
+          description: Action to run when button is held.
+          default: []
+          selector:
+            action: {}
+        scene_5r:
+          name: Released
+          description: Action to run when button is released.
+          default: []
+          selector:
+            action: {}
+        scene_52:
+          name: Pressed 2x
+          description: Action to run when button is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_53:
+          name: Pressed 3x
+          description: Action to run when button is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_54:
+          name: Pressed 4x
+          description: Action to run when button is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_55:
+          name: Pressed 5x
+          description: Action to run when button is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button0_led:
+      icon: mdi:numeric-1-box
+      name: 'Big Button (Relay / Dimmer) - LED Settings'
+      collapsed: true
+      input:
+        led_mode0:
+          name: LED Control Mode
+          description: '**LED uses Blueprint setting** (default) - this blueprint
+            drives the LED from the Entity to Track below, giving it per-state
+            colors, brightness and the Conditional Override, same as the scene
+            buttons. **LED uses Buttons Firmware State** - the device firmware
+            drives the LED from its own attached load (on/off only, no color or
+            brightness control); the Entity to Track and every LED value below
+            are then ignored.'
+          default: blueprint
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: LED uses Blueprint setting
+                value: blueprint
+              - label: LED uses Buttons Firmware State
+                value: firmware
+              multiple: false
+              custom_value: false
+              sort: false
+        track_relay0:
+          name: Firmware LED State
+          description: Only used when **LED Control Mode** is set to *LED uses
+            Buttons Firmware State*. Chooses which way the firmware tracks the
+            load attached to the relay / dimmer.
+          default: '1'
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: On when load is off
+                value: '0'
+              - label: On when load is on
+                value: '1'
+              multiple: false
+              custom_value: false
+              sort: false
+        input_entity0:
+          name: Entity to Track
+          description: Choose entity for LED state to track
+          default: []
+          selector:
+            entity:
+              multiple: false
+              domain:
+              - alarm_control_panel
+              - automation
+              - binary_sensor
+              - climate
+              - cover
+              - device_tracker
+              - fan
+              - humidifier
+              - input_boolean
+              - light
+              - lock
+              - media_player
+              - person
+              - schedule
+              - script
+              - sensor
+              - siren
+              - switch
+              - timer
+              - update
+              - valve
+              reorder: false
+        off_state0:
+          name: Off Behavior
+          description: Led state when target is off, closed, disarmed or locked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_color0:
+          name: Off Color
+          description: Color for led when target is off (default white)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_brightness0:
+          name: Brightness When Entity Is Off
+          description: LED brightness when entity is off. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_state0:
+          name: On Behavior
+          description: Led state when target is on, opened, armed or unlocked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_color0:
+          name: On Color
+          description: Color for led when target is on (default blue)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_brightness0:
+          name: Brightness When Entity Is On
+          description: LED brightness when entity is on. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_state0:
+          name: Unavailable State
+          description: Led state when target is unavailable
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_color0:
+          name: Unavailable Color
+          description: Color for led when target is unavailable (default red)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_brightness0:
+          name: Unavailable Brightness
+          description: LED brightness when entity is unavailable. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_state0:
+          name: Override Behavior
+          description: LED behavior while the Conditional Override is active. Global
+            Default uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_color0:
+          name: Override Color
+          description: LED color while the Conditional Override is active. Global Default
+            uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_brightness0:
+          name: Override Brightness
+          description: LED brightness while the Conditional Override is active. 3 =
+            Low, 6 = Medium, 10 = Bright. Global Default uses the value set in the
+            Conditional Override panel. Not used when the resulting behavior is Always
+            Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    button2_actions:
+      icon: mdi:numeric-2-box
+      name: 'Top Left Button - Actions'
+      collapsed: true
+      input:
+        scene_1:
+          name: Pressed Once
+          description: Action to run when button is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_1h:
+          name: Held
+          description: Action to run when button is held.
+          default: []
+          selector:
+            action: {}
+        scene_1r:
+          name: Released
+          description: Action to run when button is released.
+          default: []
+          selector:
+            action: {}
+        scene_12:
+          name: Pressed 2x
+          description: Action to run when button is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_13:
+          name: Pressed 3x
+          description: Action to run when button is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_14:
+          name: Pressed 4x
+          description: Action to run when button is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_15:
+          name: Pressed 5x
+          description: Action to run when button is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button2_led:
+      icon: mdi:numeric-2-box
+      name: 'Top Left Button - LED Settings'
+      collapsed: true
+      input:
+        input_entity1:
+          name: Entity to Track
+          description: Choose entity for LED state to track
+          default: []
+          selector:
+            entity:
+              multiple: false
+              domain:
+              - alarm_control_panel
+              - automation
+              - binary_sensor
+              - climate
+              - cover
+              - device_tracker
+              - fan
+              - humidifier
+              - input_boolean
+              - light
+              - lock
+              - media_player
+              - person
+              - schedule
+              - script
+              - sensor
+              - siren
+              - switch
+              - timer
+              - update
+              - valve
+              reorder: false
+        off_state1:
+          name: Off Behavior
+          description: Led state when target is off, closed, disarmed or locked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_color1:
+          name: Off Color
+          description: Color for led when target is off (default white)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_brightness1:
+          name: Brightness When Entity Is Off
+          description: LED brightness when entity is off. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_state1:
+          name: On Behavior
+          description: Led state when target is on, opened, armed or unlocked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_color1:
+          name: On Color
+          description: Color for led when target is on (default green)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_brightness1:
+          name: Brightness When Entity Is On
+          description: LED brightness when entity is on. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_state1:
+          name: Unavailable State
+          description: Led state when target is unavailable
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_color1:
+          name: Unavailable Color
+          description: Color for led when target is unavailable (default red)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_brightness1:
+          name: Unavailable Brightness
+          description: LED brightness when entity is unavailable. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_state1:
+          name: Override Behavior
+          description: LED behavior while the Conditional Override is active. Global
+            Default uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_color1:
+          name: Override Color
+          description: LED color while the Conditional Override is active. Global Default
+            uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_brightness1:
+          name: Override Brightness
+          description: LED brightness while the Conditional Override is active. 3 =
+            Low, 6 = Medium, 10 = Bright. Global Default uses the value set in the
+            Conditional Override panel. Not used when the resulting behavior is Always
+            Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    button3_actions:
+      icon: mdi:numeric-3-box
+      name: 'Top Right Button - Actions'
+      collapsed: true
+      input:
+        scene_2:
+          name: Pressed Once
+          description: Action to run when button is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_2h:
+          name: Held
+          description: Action to run when button is held.
+          default: []
+          selector:
+            action: {}
+        scene_2r:
+          name: Released
+          description: Action to run when button is released.
+          default: []
+          selector:
+            action: {}
+        scene_22:
+          name: Pressed 2x
+          description: Action to run when button is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_23:
+          name: Pressed 3x
+          description: Action to run when button is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_24:
+          name: Pressed 4x
+          description: Action to run when button is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_25:
+          name: Pressed 5x
+          description: Action to run when button is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button3_led:
+      icon: mdi:numeric-3-box
+      name: 'Top Right Button - LED Settings'
+      collapsed: true
+      input:
+        input_entity2:
+          name: Entity to Track
+          description: Choose entity for LED state to track
+          default: []
+          selector:
+            entity:
+              multiple: false
+              domain:
+              - alarm_control_panel
+              - automation
+              - binary_sensor
+              - climate
+              - cover
+              - device_tracker
+              - fan
+              - humidifier
+              - input_boolean
+              - light
+              - lock
+              - media_player
+              - person
+              - schedule
+              - script
+              - sensor
+              - siren
+              - switch
+              - timer
+              - update
+              - valve
+              reorder: false
+        off_state2:
+          name: Off Behavior
+          description: Led state when target is off, closed, disarmed or locked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_color2:
+          name: Off Color
+          description: Color for led when target is off (default white)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_brightness2:
+          name: Brightness When Entity Is Off
+          description: LED brightness when entity is off. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_state2:
+          name: On Behavior
+          description: Led state when target is on, opened, armed or unlocked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_color2:
+          name: On Color
+          description: Color for led when target is on (default green)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_brightness2:
+          name: Brightness When Entity Is On
+          description: LED brightness when entity is on. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_state2:
+          name: Unavailable State
+          description: Led state when target is unavailable
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_color2:
+          name: Unavailable Color
+          description: Color for led when target is unavailable (default red)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_brightness2:
+          name: Unavailable Brightness
+          description: LED brightness when entity is unavailable. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_state2:
+          name: Override Behavior
+          description: LED behavior while the Conditional Override is active. Global
+            Default uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_color2:
+          name: Override Color
+          description: LED color while the Conditional Override is active. Global Default
+            uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_brightness2:
+          name: Override Brightness
+          description: LED brightness while the Conditional Override is active. 3 =
+            Low, 6 = Medium, 10 = Bright. Global Default uses the value set in the
+            Conditional Override panel. Not used when the resulting behavior is Always
+            Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    button4_actions:
+      icon: mdi:numeric-4-box
+      name: 'Bottom Left Button - Actions'
+      collapsed: true
+      input:
+        scene_3:
+          name: Pressed Once
+          description: Action to run when button is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_3h:
+          name: Held
+          description: Action to run when button is held.
+          default: []
+          selector:
+            action: {}
+        scene_3r:
+          name: Released
+          description: Action to run when button is released.
+          default: []
+          selector:
+            action: {}
+        scene_32:
+          name: Pressed 2x
+          description: Action to run when button is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_33:
+          name: Pressed 3x
+          description: Action to run when button is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_34:
+          name: Pressed 4x
+          description: Action to run when button is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_35:
+          name: Pressed 5x
+          description: Action to run when button is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button4_led:
+      icon: mdi:numeric-4-box
+      name: 'Bottom Left Button - LED Settings'
+      collapsed: true
+      input:
+        input_entity3:
+          name: Entity to Track
+          description: Choose entity for LED state to track
+          default: []
+          selector:
+            entity:
+              multiple: false
+              domain:
+              - alarm_control_panel
+              - automation
+              - binary_sensor
+              - climate
+              - cover
+              - device_tracker
+              - fan
+              - humidifier
+              - input_boolean
+              - light
+              - lock
+              - media_player
+              - person
+              - schedule
+              - script
+              - sensor
+              - siren
+              - switch
+              - timer
+              - update
+              - valve
+              reorder: false
+        off_state3:
+          name: Off Behavior
+          description: Led state when target is off, closed, disarmed or locked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_color3:
+          name: Off Color
+          description: Color for led when target is off (default white)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_brightness3:
+          name: Brightness When Entity Is Off
+          description: LED brightness when entity is off. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_state3:
+          name: On Behavior
+          description: Led state when target is on, opened, armed or unlocked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_color3:
+          name: On Color
+          description: Color for led when target is on (default green)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_brightness3:
+          name: Brightness When Entity Is On
+          description: LED brightness when entity is on. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_state3:
+          name: Unavailable State
+          description: Led state when target is unavailable
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_color3:
+          name: Unavailable Color
+          description: Color for led when target is unavailable (default red)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_brightness3:
+          name: Unavailable Brightness
+          description: LED brightness when entity is unavailable. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_state3:
+          name: Override Behavior
+          description: LED behavior while the Conditional Override is active. Global
+            Default uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_color3:
+          name: Override Color
+          description: LED color while the Conditional Override is active. Global Default
+            uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_brightness3:
+          name: Override Brightness
+          description: LED brightness while the Conditional Override is active. 3 =
+            Low, 6 = Medium, 10 = Bright. Global Default uses the value set in the
+            Conditional Override panel. Not used when the resulting behavior is Always
+            Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+    button5_actions:
+      icon: mdi:numeric-5-box
+      name: 'Bottom Right Button - Actions'
+      collapsed: true
+      input:
+        scene_4:
+          name: Pressed Once
+          description: Action to run when button is pressed once.
+          default: []
+          selector:
+            action: {}
+        scene_4h:
+          name: Held
+          description: Action to run when button is held.
+          default: []
+          selector:
+            action: {}
+        scene_4r:
+          name: Released
+          description: Action to run when button is released.
+          default: []
+          selector:
+            action: {}
+        scene_42:
+          name: Pressed 2x
+          description: Action to run when button is pressed twice.
+          default: []
+          selector:
+            action: {}
+        scene_43:
+          name: Pressed 3x
+          description: Action to run when button is pressed three times.
+          default: []
+          selector:
+            action: {}
+        scene_44:
+          name: Pressed 4x
+          description: Action to run when button is pressed four times.
+          default: []
+          selector:
+            action: {}
+        scene_45:
+          name: Pressed 5x
+          description: Action to run when button is pressed five times.
+          default: []
+          selector:
+            action: {}
+    button5_led:
+      icon: mdi:numeric-5-box
+      name: 'Bottom Right Button - LED Settings'
+      collapsed: true
+      input:
+        input_entity4:
+          name: Entity to Track
+          description: Choose entity for LED state to track
+          default: []
+          selector:
+            entity:
+              multiple: false
+              domain:
+              - alarm_control_panel
+              - automation
+              - binary_sensor
+              - climate
+              - cover
+              - device_tracker
+              - fan
+              - humidifier
+              - input_boolean
+              - light
+              - lock
+              - media_player
+              - person
+              - schedule
+              - script
+              - sensor
+              - siren
+              - switch
+              - timer
+              - update
+              - valve
+              reorder: false
+        off_state4:
+          name: Off Behavior
+          description: Led state when target is off, closed, disarmed or locked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_color4:
+          name: Off Color
+          description: Color for led when target is off (default white)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        off_brightness4:
+          name: Brightness When Entity Is Off
+          description: LED brightness when entity is off. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Off Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_state4:
+          name: On Behavior
+          description: Led state when target is on, opened, armed or unlocked
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_color4:
+          name: On Color
+          description: Color for led when target is on (default green)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        on_brightness4:
+          name: Brightness When Entity Is On
+          description: LED brightness when entity is on. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when On Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_state4:
+          name: Unavailable State
+          description: Led state when target is unavailable
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_color4:
+          name: Unavailable Color
+          description: Color for led when target is unavailable (default red)
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        unavail_brightness4:
+          name: Unavailable Brightness
+          description: LED brightness when entity is unavailable. Pick a level from 1 to 10 (3 = Low, 6 = Medium, 10 = Bright). Older firmware is remapped automatically. Not used when Unavailable Behavior is set to Always Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_state4:
+          name: Override Behavior
+          description: LED behavior while the Conditional Override is active. Global
+            Default uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: Always off
+                value: '2'
+              - label: Always on
+                value: '3'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_color4:
+          name: Override Color
+          description: LED color while the Conditional Override is active. Global Default
+            uses the value set in the Conditional Override panel.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: White
+                value: '0'
+              - label: Blue
+                value: '1'
+              - label: Green
+                value: '2'
+              - label: Red
+                value: '3'
+              - label: Magenta
+                value: '4'
+              - label: Yellow
+                value: '5'
+              - label: Cyan
+                value: '6'
+              multiple: false
+              custom_value: false
+              sort: false
+        ovr_brightness4:
+          name: Override Brightness
+          description: LED brightness while the Conditional Override is active. 3 =
+            Low, 6 = Medium, 10 = Bright. Global Default uses the value set in the
+            Conditional Override panel. Not used when the resulting behavior is Always
+            Off.
+          default: global
+          selector:
+            select:
+              mode: dropdown
+              options:
+              - label: Global Default
+                value: global
+              - label: No Change
+                value: '99'
+              - label: '1 (dimmest)'
+                value: '1'
+              - label: '2'
+                value: '2'
+              - label: '3 (Low)'
+                value: '3'
+              - label: '4'
+                value: '4'
+              - label: '5'
+                value: '5'
+              - label: '6 (Medium)'
+                value: '6'
+              - label: '7'
+                value: '7'
+              - label: '8'
+                value: '8'
+              - label: '9'
+                value: '9'
+              - label: '10 (Bright)'
+                value: '10'
+              multiple: false
+              custom_value: false
+              sort: false
+mode: parallel
+max: 10
+variables:
+  g_ovr_state: !input global_ovr_state
+  g_ovr_color: !input global_ovr_color
+  g_ovr_brightness: !input global_ovr_brightness
+  g_on_state: !input global_on_state
+  g_on_color: !input global_on_color
+  g_on_brightness: !input global_on_brightness
+  g_off_state: !input global_off_state
+  g_off_color: !input global_off_color
+  g_off_brightness: !input global_off_brightness
+  g_unavail_state: !input global_unavail_state
+  g_unavail_color: !input global_unavail_color
+  g_unavail_brightness: !input global_unavail_brightness
+  controller_id: !input zooz_switch
+  input_p19: !input p19_relay_control
+  input_p20: !input p20_relay_led_report
+  firmware_override: !input firmware_version
+  device_model: '{{ device_attr(controller_id, ''model'') }}'
+  is_new_firmware: |-
+    {%- if firmware_override == 'auto' -%}
+    {%- set ver = device_attr(controller_id, 'sw_version') | string | trim -%}
+    {%- if ver in ['', 'None', 'none', 'unknown', 'unavailable'] -%}{{ device_model in ['ZEN32 800LR', 'ZEN35'] }}
+    {%- else -%}
+    {%- set p = ver.split('.') -%}
+    {%- set key = (p[0] | int(0)) * 1000000 + ((p[1] | int(0)) if p | length > 1 else 0) * 1000 + ((p[2] | int(0)) if p | length > 2 else 0) -%}
+    {{ (device_model == 'ZEN35' and key >= 1040000) or (device_model == 'ZEN32 800LR' and key >= 3030000) }}
+    {%- endif -%}
+    {%- else -%}{{ firmware_override == 'new' }}
+    {%- endif -%}
+  toggle_offset: 1
+  color_offset: 6
+  brightness_offset: 11
+  on_states:
+  - 'on'
+  - open
+  - opening
+  - 'true'
+  - 'True'
+  - true
+  - true
+  - playing
+  - heat
+  - cool
+  - dry
+  - armed_home
+  - armed_away
+  - armed_vacation
+  - armed_night
+  - armed_custom_bypass
+  - triggered
+  - pending
+  - arming
+  - unlocked
+  - 1
+  - home
+  - active
+  off_states:
+  - 'off'
+  - closed
+  - closing
+  - 'false'
+  - 'False'
+  - false
+  - false
+  - standby
+  - paused
+  - idle
+  - disarmed
+  - disarming
+  - locked
+  - not_home
+  - away
+  valid_buttons: '{{ inputs | rejectattr(''trigger_entity'', ''in'', [none, '''',
+    []]) | rejectattr(''led_mode'', ''eq'', ''firmware'') | list }}'
+  turn_off_untracked: !input turn_off_untracked
+  untracked_buttons: '{{ inputs | selectattr(''trigger_entity'', ''in'', [none, '''',
+    []]) | rejectattr(''led_mode'', ''eq'', ''firmware'') | list }}'
+trigger_variables:
+  inputs:
+  - button_id: 0
+    led_mode: !input led_mode0
+    track_relay: !input track_relay0
+    off_state: !input off_state0
+    off_color: !input off_color0
+    off_brightness: !input off_brightness0
+    on_state: !input on_state0
+    on_color: !input on_color0
+    on_brightness: !input on_brightness0
+    unavail_state: !input unavail_state0
+    unavail_color: !input unavail_color0
+    unavail_brightness: !input unavail_brightness0
+    ovr_state: !input ovr_state0
+    ovr_color: !input ovr_color0
+    ovr_brightness: !input ovr_brightness0
+    trigger_entity: !input input_entity0
+  - button_id: 1
+    led_mode: blueprint
+    track_relay: '1'
+    off_state: !input off_state1
+    off_color: !input off_color1
+    off_brightness: !input off_brightness1
+    on_state: !input on_state1
+    on_color: !input on_color1
+    on_brightness: !input on_brightness1
+    unavail_state: !input unavail_state1
+    unavail_color: !input unavail_color1
+    unavail_brightness: !input unavail_brightness1
+    ovr_state: !input ovr_state1
+    ovr_color: !input ovr_color1
+    ovr_brightness: !input ovr_brightness1
+    trigger_entity: !input input_entity1
+  - button_id: 2
+    led_mode: blueprint
+    track_relay: '1'
+    off_state: !input off_state2
+    off_color: !input off_color2
+    off_brightness: !input off_brightness2
+    on_state: !input on_state2
+    on_color: !input on_color2
+    on_brightness: !input on_brightness2
+    unavail_state: !input unavail_state2
+    unavail_color: !input unavail_color2
+    unavail_brightness: !input unavail_brightness2
+    ovr_state: !input ovr_state2
+    ovr_color: !input ovr_color2
+    ovr_brightness: !input ovr_brightness2
+    trigger_entity: !input input_entity2
+  - button_id: 3
+    led_mode: blueprint
+    track_relay: '1'
+    off_state: !input off_state3
+    off_color: !input off_color3
+    off_brightness: !input off_brightness3
+    on_state: !input on_state3
+    on_color: !input on_color3
+    on_brightness: !input on_brightness3
+    unavail_state: !input unavail_state3
+    unavail_color: !input unavail_color3
+    unavail_brightness: !input unavail_brightness3
+    ovr_state: !input ovr_state3
+    ovr_color: !input ovr_color3
+    ovr_brightness: !input ovr_brightness3
+    trigger_entity: !input input_entity3
+  - button_id: 4
+    led_mode: blueprint
+    track_relay: '1'
+    off_state: !input off_state4
+    off_color: !input off_color4
+    off_brightness: !input off_brightness4
+    on_state: !input on_state4
+    on_color: !input on_color4
+    on_brightness: !input on_brightness4
+    unavail_state: !input unavail_state4
+    unavail_color: !input unavail_color4
+    unavail_brightness: !input unavail_brightness4
+    ovr_state: !input ovr_state4
+    ovr_color: !input ovr_color4
+    ovr_brightness: !input ovr_brightness4
+    trigger_entity: !input input_entity4
+triggers:
+- triggers: !input override_triggers
+- alias: ButtonPress
+  id: ButtonPress
+  platform: event
+  event_type: zwave_js_value_notification
+  event_data:
+    device_id: !input zooz_switch
+- alias: HassStart
+  id: HassStart
+  platform: homeassistant
+  event: start
+- platform: state
+  entity_id: !input input_entity0
+  enabled: '{{ inputs[0].trigger_entity not in [none, '''', []] }}'
+  id: StateTrigger
+  alias: '0'
+- platform: state
+  entity_id: !input input_entity1
+  enabled: '{{ inputs[1].trigger_entity not in [none, '''', []] }}'
+  id: StateTrigger
+  alias: '1'
+- platform: state
+  entity_id: !input input_entity2
+  enabled: '{{ inputs[2].trigger_entity not in [none, '''', []] }}'
+  id: StateTrigger
+  alias: '2'
+- platform: state
+  entity_id: !input input_entity3
+  enabled: '{{ inputs[3].trigger_entity not in [none, '''', []] }}'
+  id: StateTrigger
+  alias: '3'
+- platform: state
+  entity_id: !input input_entity4
+  enabled: '{{ inputs[4].trigger_entity not in [none, '''', []] }}'
+  id: StateTrigger
+  alias: '4'
+- platform: event
+  event_type: automation_reloaded
+  id: AutomationUpdate
+  alias: AutomationUpdate
+action:
+  choose:
+  - conditions: '{{ trigger.alias == ''ButtonPress'' }}'
+    alias: ButtonPressAction
+    sequence:
+    - variables:
+        input_raw_value: '{{ trigger.event.data.value }}'
+        value_to_name:
+          0: KeyPressed
+          1: KeyReleased
+          2: KeyHeldDown
+          3: KeyPressed2x
+          4: KeyPressed3x
+          5: KeyPressed4x
+          6: KeyPressed5x
+        value: "{% if input_raw_value in value_to_name %}\n  {{ value_to_name[input_raw_value|int]
+          }}\n{% else %}\n  {{ trigger.event.data.value }}\n{% endif %}\n"
+        property_key_name: '{{ trigger.event.data.property_key_name }}'
+        label: '{{ trigger.event.data.label }}'
+        command_class_name: '{{ trigger.event.data.command_class_name }}'
+    - service: logbook.log
+      data:
+        name: Z-Wave JS
+        message: 'received event: {{ command_class_name }} - {{ value }} - {{ label
+          }}'
+    - choose:
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_1
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_1h
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_1r
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_12
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_13
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_14
+      - conditions: '{{ property_key_name == ''001'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_15
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_2
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_2h
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_2r
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_22
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_23
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_24
+      - conditions: '{{ property_key_name == ''002'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_25
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_3
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_3h
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_3r
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_32
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_33
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_34
+      - conditions: '{{ property_key_name == ''003'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_35
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_4
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_4h
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_4r
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_42
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_43
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_44
+      - conditions: '{{ property_key_name == ''004'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_45
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_5
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_5h
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_5r
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_52
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_53
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_54
+      - conditions: '{{ property_key_name == ''005'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_55
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyPressed'' }}'
+        sequence: !input scene_6
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyHeldDown''
+          }}'
+        sequence: !input scene_6h
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyReleased''
+          }}'
+        sequence: !input scene_6r
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyPressed2x''
+          }}'
+        sequence: !input scene_62
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyPressed3x''
+          }}'
+        sequence: !input scene_63
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyPressed4x''
+          }}'
+        sequence: !input scene_64
+      - conditions: '{{ property_key_name == ''006'' and value == ''KeyPressed5x''
+          }}'
+        sequence: !input scene_65
+  - conditions: "{{\n  trigger.id == 'StateTrigger' and\n  inputs[trigger.alias |
+      int].led_mode != 'firmware' and\n  (trigger.from_state is none or\n   trigger.to_state.state
+      != trigger.from_state.state)\n}}\n"
+    alias: SingleButtonStateUpdate
+    sequence:
+    - variables:
+        current: '{{ inputs[trigger.alias | int] }}'
+        target_state: '{{ trigger.to_state.state }}'
+    - variables: &id001
+        map_b_off: |-
+          {%- set new = is_new_firmware in [true, 'True', 'true'] -%}
+          {%- set vraw = current.off_brightness | string | trim | lower -%}
+          {%- set v = (g_off_brightness | string | trim | lower) if vraw == 'global' else vraw -%}
+          {%- set names = {'low': 3, 'medium': 6, 'bright': 10} -%}
+          {%- if v == '99' -%}99
+          {%- else -%}
+          {%- if v in names -%}{%- set lvl = names[v] -%}
+          {%- elif v | regex_match('^[0-9]+$') and 1 <= v | int <= 10 -%}{%- set lvl = v | int -%}
+          {%- else -%}{%- set lvl = 6 -%}
+          {%- endif -%}
+          {%- if new -%}{{ lvl }}{%- else -%}{{ 2 if lvl <= 3 else (1 if lvl <= 7 else 0) }}{%- endif -%}
+          {%- endif -%}
+        map_b_on: |-
+          {%- set new = is_new_firmware in [true, 'True', 'true'] -%}
+          {%- set vraw = current.on_brightness | string | trim | lower -%}
+          {%- set v = (g_on_brightness | string | trim | lower) if vraw == 'global' else vraw -%}
+          {%- set names = {'low': 3, 'medium': 6, 'bright': 10} -%}
+          {%- if v == '99' -%}99
+          {%- else -%}
+          {%- if v in names -%}{%- set lvl = names[v] -%}
+          {%- elif v | regex_match('^[0-9]+$') and 1 <= v | int <= 10 -%}{%- set lvl = v | int -%}
+          {%- else -%}{%- set lvl = 6 -%}
+          {%- endif -%}
+          {%- if new -%}{{ lvl }}{%- else -%}{{ 2 if lvl <= 3 else (1 if lvl <= 7 else 0) }}{%- endif -%}
+          {%- endif -%}
+        map_b_unavail: |-
+          {%- set new = is_new_firmware in [true, 'True', 'true'] -%}
+          {%- set vraw = current.unavail_brightness | string | trim | lower -%}
+          {%- set v = (g_unavail_brightness | string | trim | lower) if vraw == 'global' else vraw -%}
+          {%- set names = {'low': 3, 'medium': 6, 'bright': 10} -%}
+          {%- if v == '99' -%}99
+          {%- else -%}
+          {%- if v in names -%}{%- set lvl = names[v] -%}
+          {%- elif v | regex_match('^[0-9]+$') and 1 <= v | int <= 10 -%}{%- set lvl = v | int -%}
+          {%- else -%}{%- set lvl = 6 -%}
+          {%- endif -%}
+          {%- if new -%}{{ lvl }}{%- else -%}{{ 2 if lvl <= 3 else (1 if lvl <= 7 else 0) }}{%- endif -%}
+          {%- endif -%}
+        map_b_ovr: |-
+          {%- set new = is_new_firmware in [true, 'True', 'true'] -%}
+          {%- set vraw = current.ovr_brightness | string | trim | lower -%}
+          {%- set v = (g_ovr_brightness | string | trim | lower) if vraw == 'global' else vraw -%}
+          {%- set names = {'low': 3, 'medium': 6, 'bright': 10} -%}
+          {%- if v == '99' -%}99
+          {%- else -%}
+          {%- if v in names -%}{%- set lvl = names[v] -%}
+          {%- elif v | regex_match('^[0-9]+$') and 1 <= v | int <= 10 -%}{%- set lvl = v | int -%}
+          {%- else -%}{%- set lvl = 6 -%}
+          {%- endif -%}
+          {%- if new -%}{{ lvl }}{%- else -%}{{ 2 if lvl <= 3 else (1 if lvl <= 7 else 0) }}{%- endif -%}
+          {%- endif -%}
+        condition: >-
+          {% if target_state in off_states %}
+            {{ dict(state=(g_off_state if current.off_state == 'global' else current.off_state), color=(g_off_color if current.off_color == 'global' else current.off_color), brightness=map_b_off) }}
+          {% elif target_state in on_states %}
+            {{ dict(state=(g_on_state if current.on_state == 'global' else current.on_state), color=(g_on_color if current.on_color == 'global' else current.on_color), brightness=map_b_on) }}
+          {% elif target_state == "unavailable" %}
+            {{ dict(state=(g_unavail_state if current.unavail_state == 'global' else current.unavail_state), color=(g_unavail_color if current.unavail_color == 'global' else current.unavail_color), brightness=map_b_unavail) }}
+          {% else %}
+            {{ dict(state=None, color=None, brightness=None) }}
+          {% endif %}
+        ovr_state: >-
+          {%- set v = g_ovr_state if current.ovr_state == 'global' else current.ovr_state -%}
+          {{ condition.state if v == '99' else v }}
+        ovr_color: >-
+          {%- set v = g_ovr_color if current.ovr_color == 'global' else current.ovr_color -%}
+          {{ condition.color if v == '99' else v }}
+        ovr_brightness: '{{ condition.brightness if map_b_ovr | string | trim == ''99''
+          else map_b_ovr }}'
+        parameter:
+          toggle: '{{ current.button_id | int + toggle_offset | int }}'
+          color: '{{ current.button_id | int + color_offset | int }}'
+          brightness: '{{ current.button_id | int + brightness_offset | int }}'
+    - if:
+      - condition: template
+        value_template: '{{ condition.state is not none }}'
+      then:
+        sequence: &id002
+        - choose:
+          - alias: OverrideActive
+            conditions: !input override_condition
+            sequence:
+            - service: zwave_js.set_config_parameter
+              data:
+                parameter: '{{ parameter.toggle }}'
+                value: '{{ ''3'' if ovr_state == ''99'' else ovr_state }}'
+              target:
+                device_id: '{{ controller_id }}'
+            - delay:
+                milliseconds: 100
+            - service: zwave_js.set_config_parameter
+              data:
+                parameter: '{{ parameter.color }}'
+                value: '{{ ovr_color }}'
+              target:
+                device_id: '{{ controller_id }}'
+            - delay:
+                milliseconds: 100
+            - service: zwave_js.set_config_parameter
+              data:
+                parameter: '{{ parameter.brightness }}'
+                value: '{{ ovr_brightness }}'
+              target:
+                device_id: '{{ controller_id }}'
+          default:
+          - service: zwave_js.set_config_parameter
+            data:
+              parameter: '{{ parameter.toggle }}'
+              value: '{{ ''3'' if condition.state == ''99'' else condition.state }}'
+            target:
+              device_id: '{{ controller_id }}'
+          - delay:
+              milliseconds: 100
+          - service: zwave_js.set_config_parameter
+            data:
+              parameter: '{{ parameter.color }}'
+              value: '{{ condition.color }}'
+            target:
+              device_id: '{{ controller_id }}'
+          - delay:
+              milliseconds: 100
+          - service: zwave_js.set_config_parameter
+            data:
+              parameter: '{{ parameter.brightness }}'
+              value: '{{ condition.brightness }}'
+            target:
+              device_id: '{{ controller_id }}'
+  - conditions: "{{\n  trigger.id not in ['ButtonPress', 'StateTrigger', 'AutomationUpdate']\n}}\n"
+    alias: UniversalRefreshAction
+    sequence:
+    - if:
+      - condition: template
+        value_template: '{{ trigger.id == ''HassStart'' }}'
+      then:
+      - delay: 00:01:00
+    - if:
+      - condition: template
+        value_template: '{{ turn_off_untracked and untracked_buttons | length > 0
+          }}'
+      then: &id003
+      - repeat:
+          for_each: '{{ untracked_buttons }}'
+          sequence:
+          - service: zwave_js.set_config_parameter
+            data:
+              parameter: '{{ repeat.item.button_id | int + toggle_offset | int }}'
+              value: '2'
+            target:
+              device_id: '{{ controller_id }}'
+    - repeat: &id004
+        for_each: '{{ valid_buttons }}'
+        sequence:
+        - variables:
+            current: '{{ repeat.item }}'
+            target_state: '{{ states(repeat.item.trigger_entity) }}'
+        - variables: *id001
+        - if:
+          - condition: template
+            value_template: '{{ condition.state is not none }}'
+          then:
+            sequence: *id002
+        - delay:
+            milliseconds: 100
+  - conditions: '{{ trigger.id == ''AutomationUpdate'' }}'
+    alias: AutomationUpdateAction
+    sequence:
+    - service: zwave_js.set_config_parameter
+      data:
+        parameter: '1'
+        value: '{{ inputs[0].track_relay if inputs[0].led_mode == ''firmware''
+          else ''2'' }}'
+      target:
+        device_id: '{{ controller_id }}'
+    - service: zwave_js.set_config_parameter
+      data:
+        parameter: '19'
+        value: '{{ input_p19 }}'
+      target:
+        device_id: '{{ controller_id }}'
+    - service: zwave_js.set_config_parameter
+      data:
+        parameter: '20'
+        value: '{{ input_p20 }}'
+      target:
+        device_id: '{{ controller_id }}'
+    - if:
+      - condition: template
+        value_template: '{{ turn_off_untracked and untracked_buttons | length > 0
+          }}'
+      then: *id003
+    - repeat: *id004
