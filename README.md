@@ -13,25 +13,25 @@ project, not a GitHub fork.
 
 ## Install
 
-[![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2FLtek%2Fzen32-zen35-control-ltek%2Fblob%2Fmain%2Fzen32-zen35-control-ltek.yaml)
+[![Open your Home Assistant instance and show the blueprint import dialog with this blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fraw.githubusercontent.com%2FLTek%2Fzen32-zen35-control-ltek%2Fmain%2Fzen32-zen35-control-ltek.yaml)
 
 Click the button above, or in Home Assistant go to **Settings → Automations &
 Scenes → Blueprints → Import Blueprint** and paste:
 
 ```
-https://github.com/Ltek/zen32-zen35-control-ltek/blob/main/zen32-zen35-control-ltek.yaml
+https://raw.githubusercontent.com/LTek/zen32-zen35-control-ltek/main/zen32-zen35-control-ltek.yaml
 ```
 
-Importing this way stores the blueprint under `blueprints/automation/Ltek/`
-(from the GitHub owner name). If instead you place the file manually under
-`blueprints/automation/LTek/`, reload automations (or restart HA). Either way,
-your automations reference it by whichever folder it ends up in plus the
-filename:
+This installs the blueprint under `blueprints/automation/LTek/`, so your
+automations reference it as:
 
 ```yaml
 use_blueprint:
   path: LTek/zen32-zen35-control-ltek.yaml
 ```
+
+> The import dialog shows the install path in an editable field, so you can
+> adjust it there if you ever want a different folder.
 
 Example automation: [`examples/living-room-zen35.yaml`](examples/living-room-zen35.yaml)
 
